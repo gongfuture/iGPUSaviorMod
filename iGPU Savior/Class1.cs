@@ -23,15 +23,15 @@ namespace PotatoOptimization
 
     public enum DragMode
     {
-        Ctrl_LeftClick, // Ctrl + 左键
+        Ctrl_LeftClick, // Ctrl + 左键 (最推荐，系统级丝滑)
         Alt_LeftClick,  // Alt + 左键
-        RightClick_Hold // 右键按住
+        RightClick_Hold // 右键按住 (手动计算，已修复抽搐)
     }
 
     // ==========================================
     // 2. 插件入口
     // ==========================================
-    [BepInPlugin("chillwithyou.potatomode", "Potato Mode Optimization", "1.5.0")]
+    [BepInPlugin("chillwithyou.potatomode", "Potato Mode Optimization", "1.6.0")]
     public class PotatoPlugin : BaseUnityPlugin
     {
         public static PotatoPlugin Instance;
@@ -50,7 +50,7 @@ namespace PotatoOptimization
             Log = Logger;
 
             InitConfig();
-            Log.LogWarning(">>> [V1.5] 插件启动：循环逻辑已修正 (原始形态 <-> 小窗) <<<");
+            Log.LogWarning(">>> [V1.6] 插件启动：修复右键抽搐 & 窗口样式还原 <<<");
 
             runnerObject = new GameObject("PotatoRunner");
             DontDestroyOnLoad(runnerObject);
@@ -82,38 +82,66 @@ namespace PotatoOptimization
         private float lastRunTime = 0f;
         private float runInterval = 3.0f;
 
-        // === ✨ 新增：用于记录“原始形态”的变量 ===
+        // === 记忆变量 ===
         private int origWidth;
         private int origHeight;
         private FullScreenMode origMode;
+        private uint origStyle; // ✨ 新增：记住原来的窗口样式 (边框/标题栏等)
 
-        // Windows API
+        // ==========================================
+        // ✨ Windows API 
+        // ==========================================
         [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
         [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
         [DllImport("user32.dll")] private static extern uint GetWindowLong(IntPtr hWnd, int nIndex);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern bool ReleaseCapture();
         [DllImport("user32.dll")] private static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
-        [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-        [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+        
+        // ✨ 新增：获取屏幕绝对坐标 (解决抽搐的关键)
+        [DllImport("user32.dll")] 
+        [return: MarshalAs(UnmanagedType.Bool)] 
+        static extern bool GetCursorPos(out POINT lpPoint);
+        
+        [StructLayout(LayoutKind.Sequential)] 
+        public struct POINT 
+        { 
+            public int X; 
+            public int Y; 
+        }
 
-        // Constants
+        [DllImport("user32.dll")] 
+        [return: MarshalAs(UnmanagedType.Bool)] 
+        static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        
+        [StructLayout(LayoutKind.Sequential)] 
+        public struct RECT 
+        { 
+            public int Left; 
+            public int Top; 
+            public int Right; 
+            public int Bottom; 
+        }
+
+        // 常量
         private const int GWL_STYLE = -16;
         private const uint WS_CAPTION = 0x00C00000;
         private const uint WS_THICKFRAME = 0x00040000;
         private const uint WS_SYSMENU = 0x00080000;
+        
         private const uint SWP_FRAMECHANGED = 0x0020;
         private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_SHOWWINDOW = 0x0040;
         private const uint SWP_NOZORDER = 0x0004;
+
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
         private const int WM_NCLBUTTONDOWN = 0xA1;
         private const int HT_CAPTION = 0x2;
 
-        // Manual drag variables
-        private Vector2 dragStartMousePos;
+        // 右键拖动变量
+        private POINT dragStartScreenPos; // ✨ 改用 POINT 记录屏幕绝对坐标
         private Vector2 dragStartWindowPos;
         private bool isRightDragging = false;
 
@@ -122,10 +150,13 @@ namespace PotatoOptimization
             SceneManager.sceneLoaded += OnSceneLoaded;
             if (isPotatoMode) ApplyPotatoMode(false);
 
-            // 初始化一下原始分辨率，防止还没切小窗就报错（虽然逻辑上不会）
+            // 初始记录一下，以防万一
             origWidth = Screen.width;
             origHeight = Screen.height;
             origMode = Screen.fullScreenMode;
+            // ✨ 获取当前窗口样式 (带边框/不带边框)
+            IntPtr hWnd = GetActiveWindow();
+            origStyle = GetWindowLong(hWnd, GWL_STYLE);
         }
 
         void Update()
@@ -133,8 +164,16 @@ namespace PotatoOptimization
             if (Input.GetKeyDown(PotatoPlugin.KeyPotatoMode.Value))
             {
                 isPotatoMode = !isPotatoMode;
-                if (isPotatoMode) { ApplyPotatoMode(true); PotatoPlugin.Log.LogWarning(">>> 土豆模式: ON <<<"); }
-                else { RestoreQuality(); PotatoPlugin.Log.LogWarning(">>> 土豆模式: OFF <<<"); }
+                if (isPotatoMode) 
+                { 
+                    ApplyPotatoMode(true); 
+                    PotatoPlugin.Log.LogWarning(">>> 土豆模式: ON <<<"); 
+                }
+                else 
+                { 
+                    RestoreQuality(); 
+                    PotatoPlugin.Log.LogWarning(">>> 土豆模式: OFF <<<"); 
+                }
             }
 
             if (Input.GetKeyDown(PotatoPlugin.KeyPiPMode.Value))
@@ -157,35 +196,130 @@ namespace PotatoOptimization
             }
         }
 
-        // === ✨ 核心修改：切换逻辑 ✨ ===
+        // === ✨ 修复后的 F3 切换逻辑 ===
         private void ToggleWindowMode()
         {
-            // 如果当前不是小窗，说明准备进入小窗
+            IntPtr hWnd = GetActiveWindow();
+
             if (!isSmallWindow)
             {
-                // 1. 存档：记下变身前的样子
+                // [进小窗]
+                // 1. 存档
                 origWidth = Screen.width;
                 origHeight = Screen.height;
                 origMode = Screen.fullScreenMode;
+                origStyle = GetWindowLong(hWnd, GWL_STYLE); // ✨ 关键：记下当前有没有边框
 
-                // 2. 变身：进入小窗
+                // 2. 变身
                 isSmallWindow = true;
                 CalculateTargetResolution();
                 Screen.SetResolution(currentTargetWidth, currentTargetHeight, FullScreenMode.Windowed);
+                
+                // 3. 去边框+置顶
                 StartCoroutine(SetPiPMode(true));
-
-                PotatoPlugin.Log.LogWarning($">>> 开启画中画 (已保存原始分辨率: {origWidth}x{origHeight}) <<<");
+                
+                PotatoPlugin.Log.LogWarning($">>> 开启画中画 (原始样式已备份) <<<");
             }
             else
             {
-                // 1. 读档：准备恢复原始形态
+                // [回全屏]
+                // 1. 状态复位
                 isSmallWindow = false;
 
-                // 2. 还原：直接设回原来的分辨率和模式
+                // 2. 还原分辨率
                 Screen.SetResolution(origWidth, origHeight, origMode);
-                StartCoroutine(SetPiPMode(false));
 
+                // 3. 还原样式+取消置顶
+                StartCoroutine(SetPiPMode(false));
+                
                 PotatoPlugin.Log.LogWarning(">>> 恢复原始状态 <<<");
+            }
+        }
+
+        private IEnumerator SetPiPMode(bool enable)
+        {
+            yield return null; 
+            yield return null;
+            
+            try
+            {
+                IntPtr hWnd = GetActiveWindow();
+
+                if (enable)
+                {
+                    // === 开启 PiP ===
+                    uint style = GetWindowLong(hWnd, GWL_STYLE);
+                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);
+                    
+                    SetWindowLong32(hWnd, GWL_STYLE, style);
+                    SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                }
+                else
+                {
+                    // === ✨ 恢复原始 ===
+                    // 关键修复：强制写回之前保存的 origStyle
+                    SetWindowLong32(hWnd, GWL_STYLE, origStyle);
+
+                    // 取消置顶 + 强制刷新 Frame
+                    SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                }
+            }
+            catch (Exception e) 
+            { 
+                PotatoPlugin.Log.LogError($"窗口样式操作失败: {e.Message}"); 
+            }
+        }
+
+        private void HandleDragLogic()
+        {
+            DragMode mode = PotatoPlugin.CfgDragMode.Value;
+
+            if (mode == DragMode.Ctrl_LeftClick || mode == DragMode.Alt_LeftClick)
+            {
+                bool modifierPressed = (mode == DragMode.Ctrl_LeftClick) ? 
+                    (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) : 
+                    (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt));
+
+                if (Input.GetMouseButtonDown(0) && modifierPressed) 
+                {
+                    DoApiDrag();
+                }
+            }
+            else if (mode == DragMode.RightClick_Hold)
+            {
+                if (Input.GetMouseButtonDown(1))
+                {
+                    isRightDragging = true;
+                    
+                    // ✨ 关键修复：使用 GetCursorPos 获取屏幕绝对坐标
+                    GetCursorPos(out dragStartScreenPos);
+                    
+                    // 获取窗口当前位置
+                    IntPtr hWnd = GetActiveWindow();
+                    GetWindowRect(hWnd, out RECT rect);
+                    dragStartWindowPos = new Vector2(rect.Left, rect.Top);
+                }
+                
+                if (Input.GetMouseButtonUp(1)) 
+                {
+                    isRightDragging = false;
+                }
+
+                if (isRightDragging)
+                {
+                    // ✨ 获取当前屏幕绝对坐标
+                    GetCursorPos(out POINT currentScreenPos);
+                    
+                    // 计算绝对位移 (屏幕像素级，1:1)
+                    int deltaX = currentScreenPos.X - dragStartScreenPos.X;
+                    int deltaY = currentScreenPos.Y - dragStartScreenPos.Y;
+
+                    int newX = (int)(dragStartWindowPos.x + deltaX);
+                    int newY = (int)(dragStartWindowPos.y + deltaY);
+
+                    // 移动窗口
+                    SetWindowPos(GetActiveWindow(), IntPtr.Zero, newX, newY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+                }
             }
         }
 
@@ -197,70 +331,20 @@ namespace PotatoOptimization
             currentTargetHeight = screenRes.height / divisor;
         }
 
-        private IEnumerator SetPiPMode(bool enable)
-        {
-            yield return null; yield return null;
-            try
-            {
-                IntPtr hWnd = GetActiveWindow();
-                uint style = GetWindowLong(hWnd, GWL_STYLE);
-                if (enable)
-                {
-                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);
-                    SetWindowLong32(hWnd, GWL_STYLE, style);
-                    SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-                }
-                else
-                {
-                    // 恢复时，只要取消 TopMost 即可
-                    // 窗口样式（标题栏等）会因为 Screen.SetResolution 切换模式而由 Unity 自动重置
-                    SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-                }
-            }
-            catch (Exception e) { PotatoPlugin.Log.LogError($"窗口样式失败: {e.Message}"); }
-        }
-
-        private void HandleDragLogic()
-        {
-            DragMode mode = PotatoPlugin.CfgDragMode.Value;
-
-            if (mode == DragMode.Ctrl_LeftClick || mode == DragMode.Alt_LeftClick)
-            {
-                bool modifierPressed = (mode == DragMode.Ctrl_LeftClick) ?
-                    (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) :
-                    (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt));
-
-                if (Input.GetMouseButtonDown(0) && modifierPressed) DoApiDrag();
-            }
-            else if (mode == DragMode.RightClick_Hold)
-            {
-                if (Input.GetMouseButtonDown(1))
-                {
-                    isRightDragging = true;
-                    dragStartMousePos = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
-                    IntPtr hWnd = GetActiveWindow();
-                    GetWindowRect(hWnd, out RECT rect);
-                    dragStartWindowPos = new Vector2(rect.Left, rect.Top);
-                }
-                if (Input.GetMouseButtonUp(1)) isRightDragging = false;
-
-                if (isRightDragging)
-                {
-                    Vector2 currentMouse = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
-                    Vector2 delta = currentMouse - dragStartMousePos;
-                    int newX = (int)(dragStartWindowPos.x + delta.x);
-                    int newY = (int)(dragStartWindowPos.y + delta.y);
-                    SetWindowPos(GetActiveWindow(), IntPtr.Zero, newX, newY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-                }
-            }
-        }
-
         private void DoApiDrag()
         {
-            try { ReleaseCapture(); SendMessage(GetActiveWindow(), WM_NCLBUTTONDOWN, HT_CAPTION, 0); } catch { }
+            try 
+            { 
+                ReleaseCapture(); 
+                SendMessage(GetActiveWindow(), WM_NCLBUTTONDOWN, HT_CAPTION, 0); 
+            } 
+            catch { }
         }
 
-        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) { if (isPotatoMode) ApplyPotatoMode(false); }
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) 
+        { 
+            if (isPotatoMode) ApplyPotatoMode(false); 
+        }
 
         private void ApplyPotatoMode(bool showLog)
         {
