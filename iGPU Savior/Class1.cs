@@ -72,7 +72,7 @@ namespace PotatoOptimization
     // ==========================================
     public class PotatoController : MonoBehaviour
     {
-        private bool isPotatoMode = true;
+        private bool isPotatoMode = false; // ✨ Default to false
         private bool isSmallWindow = false;
 
         private float targetRenderScale = 0.4f;
@@ -86,14 +86,32 @@ namespace PotatoOptimization
         private int origWidth;
         private int origHeight;
         private FullScreenMode origMode;
-        private uint origStyle; // ✨ 新增：记住原来的窗口样式 (边框/标题栏等)
+        private IntPtr origStyle; // ✨ Changed to IntPtr for 64-bit compatibility
 
         // ==========================================
         // ✨ Windows API 
         // ==========================================
         [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
-        [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
-        [DllImport("user32.dll")] private static extern uint GetWindowLong(IntPtr hWnd, int nIndex);
+        
+        // 32-bit and 64-bit compatible P/Invoke
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")] private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+        private static IntPtr SetWindowLong(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+        {
+            if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+            else return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+        }
+
+        private static IntPtr GetWindowLong(IntPtr hWnd, int nIndex)
+        {
+            if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
+            else return new IntPtr(GetWindowLong32(hWnd, nIndex));
+        }
+
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern bool ReleaseCapture();
         [DllImport("user32.dll")] private static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
@@ -248,17 +266,18 @@ namespace PotatoOptimization
                 if (enable)
                 {
                     // === 开启 PiP ===
-                    uint style = GetWindowLong(hWnd, GWL_STYLE);
-                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);
+                    IntPtr stylePtr = GetWindowLong(hWnd, GWL_STYLE);
+                    long style = stylePtr.ToInt64();
+                    style &= ~((long)WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);
                     
-                    SetWindowLong32(hWnd, GWL_STYLE, style);
+                    SetWindowLong(hWnd, GWL_STYLE, new IntPtr(style));
                     SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
                 }
                 else
                 {
                     // === ✨ 恢复原始 ===
                     // 关键修复：强制写回之前保存的 origStyle
-                    SetWindowLong32(hWnd, GWL_STYLE, origStyle);
+                    SetWindowLong(hWnd, GWL_STYLE, origStyle);
 
                     // 取消置顶 + 强制刷新 Frame
                     SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
@@ -338,7 +357,10 @@ namespace PotatoOptimization
                 ReleaseCapture(); 
                 SendMessage(GetActiveWindow(), WM_NCLBUTTONDOWN, HT_CAPTION, 0); 
             } 
-            catch { }
+            catch (Exception e)
+            {
+                PotatoPlugin.Log.LogError($"拖动窗口失败: {e.Message}");
+            }
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode) 
@@ -370,7 +392,10 @@ namespace PotatoOptimization
                     }
                 }
             }
-            catch (Exception) { }
+            catch (Exception e)
+            {
+                if (showLog) PotatoPlugin.Log.LogError($"应用土豆模式失败: {e.Message}");
+            }
         }
 
         private void RestoreQuality()
@@ -385,7 +410,10 @@ namespace PotatoOptimization
                     SetProp(pipeline.GetType(), pipeline, "shadowDistance", 50f);
                 }
             }
-            catch { }
+            catch (Exception e)
+            {
+                PotatoPlugin.Log.LogError($"恢复画质失败: {e.Message}");
+            }
         }
 
         private void SetProp(Type type, object obj, string propName, object value)
@@ -395,7 +423,10 @@ namespace PotatoOptimization
                 PropertyInfo prop = type.GetProperty(propName);
                 if (prop != null && prop.CanWrite) prop.SetValue(obj, value, null);
             }
-            catch { }
+            catch (Exception e)
+            {
+                PotatoPlugin.Log.LogWarning($"设置属性失败 [{propName}]: {e.Message}");
+            }
         }
     }
 }
