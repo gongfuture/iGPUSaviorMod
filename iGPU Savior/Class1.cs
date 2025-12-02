@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using HarmonyLib;
 using System;
 using System.Collections;
 using System.Reflection;
@@ -39,6 +40,8 @@ namespace PotatoOptimization
 
         public static ConfigEntry<KeyCode> KeyPotatoMode;
         public static ConfigEntry<KeyCode> KeyPiPMode;
+        public static ConfigEntry<KeyCode> KeyCameraMirror; // 镜像摄像机快捷键
+        public static ConfigEntry<bool> CfgEnableMirror; // 启动时是否启用镜像
         public static ConfigEntry<WindowScaleRatio> CfgWindowScale;
         public static ConfigEntry<DragMode> CfgDragMode;
 
@@ -50,7 +53,20 @@ namespace PotatoOptimization
             Log = Logger;
 
             InitConfig();
-            Log.LogWarning(">>> [V1.6] 插件启动：修复右键抽搐 & 窗口样式还原 <<<");
+            
+            // 应用Harmony补丁
+            try
+            {
+                var harmony = new HarmonyLib.Harmony("chillwithyou.potatomode");
+                harmony.PatchAll();
+                Log.LogWarning(">>> Harmony patches applied successfully! <<<");
+            }
+            catch (Exception e)
+            {
+                Log.LogError($"Failed to apply Harmony patches: {e}");
+            }
+            
+            Log.LogWarning(">>> [V1.6] 插件启动：修复右键抽搐 & 窗口样式还原 & MOD设置UI <<<");
 
             runnerObject = new GameObject("PotatoRunner");
             DontDestroyOnLoad(runnerObject);
@@ -62,6 +78,8 @@ namespace PotatoOptimization
         {
             KeyPotatoMode = Config.Bind("Hotkeys", "PotatoModeKey", KeyCode.F2, "切换土豆模式的按键");
             KeyPiPMode = Config.Bind("Hotkeys", "PiPModeKey", KeyCode.F3, "切换画中画小窗的按键");
+            KeyCameraMirror = Config.Bind("Hotkeys", "CameraMirrorKey", KeyCode.F4, "切换摄像机镜像的按键(左右翻转画面)");
+            CfgEnableMirror = Config.Bind("Camera", "EnableMirrorOnStart", false, "启动时是否自动启用摄像机镜像(默认关闭,建议先用UE Explorer测试)");
             CfgWindowScale = Config.Bind("Window", "ScaleRatio", WindowScaleRatio.OneThird, "小窗缩放比例");
             CfgDragMode = Config.Bind("Window", "DragMethod", DragMode.Ctrl_LeftClick, "拖动方式");
         }
@@ -74,6 +92,7 @@ namespace PotatoOptimization
     {
         private bool isPotatoMode = false; // ✨ Default to false
         private bool isSmallWindow = false;
+        private bool isCameraMirrored = false; // 新增：镜像状态
 
         private float targetRenderScale = 0.4f;
         private int currentTargetWidth;
@@ -175,6 +194,12 @@ namespace PotatoOptimization
             // ✨ 获取当前窗口样式 (带边框/不带边框)
             IntPtr hWnd = GetActiveWindow();
             origStyle = GetWindowLong(hWnd, GWL_STYLE);
+
+            // 根据配置决定是否启动时启用镜像
+            if (PotatoPlugin.CfgEnableMirror.Value)
+            {
+                StartCoroutine(ApplyMirrorOnStart());
+            }
         }
 
         void Update()
@@ -197,6 +222,11 @@ namespace PotatoOptimization
             if (Input.GetKeyDown(PotatoPlugin.KeyPiPMode.Value))
             {
                 ToggleWindowMode();
+            }
+
+            if (Input.GetKeyDown(PotatoPlugin.KeyCameraMirror.Value))
+            {
+                ToggleCameraMirror();
             }
 
             if (isSmallWindow)
@@ -251,6 +281,65 @@ namespace PotatoOptimization
                 StartCoroutine(SetPiPMode(false));
                 
                 PotatoPlugin.Log.LogWarning(">>> 恢复原始状态 <<<");
+            }
+        }
+
+        // === ✨ 启动时应用镜像 ===
+        private IEnumerator ApplyMirrorOnStart()
+        {
+            // 等待几帧，确保场景和摄像机已加载
+            yield return new WaitForSeconds(0.5f);
+            
+            if (PotatoPlugin.CfgEnableMirror.Value)
+            {
+                isCameraMirrored = true;
+                ApplyCameraMirror();
+                PotatoPlugin.Log.LogWarning(">>> 启动时已自动启用摄像机镜像 <<<");
+            }
+        }
+
+        // === ✨ 新增：摄像机镜像功能 ===
+        private void ToggleCameraMirror()
+        {
+            isCameraMirrored = !isCameraMirrored;
+            ApplyCameraMirror();
+        }
+
+        // 应用镜像到所有Canvas (不影响3D渲染管线)
+        private void ApplyCameraMirror()
+        {
+            // 查找场景中所有Canvas
+            Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+            
+            if (allCanvases == null || allCanvases.Length == 0)
+            {
+                PotatoPlugin.Log.LogWarning(">>> 未找到任何Canvas，跳过镜像 <<<");
+                return;
+            }
+
+            int mirroredCount = 0;
+
+            // 只镜像Canvas，不触碰摄像机（避免破坏渲染管线）
+            foreach (Canvas canvas in allCanvases)
+            {
+                if (canvas != null)
+                {
+                    // 修改Canvas的X轴缩放实现镜像
+                    Vector3 scale = canvas.transform.localScale;
+                    scale.x = isCameraMirrored ? -1f : 1f;
+                    canvas.transform.localScale = scale;
+                    
+                    mirroredCount++;
+                }
+            }
+
+            if (isCameraMirrored)
+            {
+                PotatoPlugin.Log.LogWarning($">>> Canvas镜像: ON (已镜像 {mirroredCount} 个Canvas, UI和3D画面已翻转) <<<");
+            }
+            else
+            {
+                PotatoPlugin.Log.LogWarning($">>> Canvas镜像: OFF (已恢复 {mirroredCount} 个Canvas) <<<");
             }
         }
 
