@@ -245,41 +245,84 @@ namespace PotatoOptimization
 
                 PrepareUIResources();
 
-                // === 构建现代化UI ===
+                // === ✅ 使用游戏原生风格构建 UI ===
                 
                 CreateSectionHeader(content, "基础设置");
                 
-                CreateModernToggle(content, "画面镜像", "翻转游戏画面的水平方向",
+                // ✅ 1. 使用游戏原生的开关（克隆 VerticalSync）
+                GameObject mirrorToggle = ModToggleCloner.CreateToggleGroup(
+                    cachedSettingUI.transform, 
+                    "画面镜像", 
                     PotatoPlugin.CfgEnableMirror.Value,
-                    val => PotatoPlugin.CfgEnableMirror.Value = val);
+                    val => {
+                        PotatoPlugin.CfgEnableMirror.Value = val;
+                        // ✅ 立即应用镜像（不需要等到下次按 F4）
+                        PotatoController controller = Object.FindObjectOfType<PotatoController>();
+                        if (controller != null)
+                        {
+                            controller.SetMirrorState(val);
+                            PotatoPlugin.Log.LogInfo($"通过UI设置镜像状态: {(val ? "ON" : "OFF")}");
+                        }
+                        else
+                        {
+                            PotatoPlugin.Log.LogWarning("未找到 PotatoController 实例");
+                        }
+                    }
+                );
+                
+                if (mirrorToggle != null)
+                {
+                    mirrorToggle.transform.SetParent(content, false);
+                    mirrorToggle.SetActive(true);
+                    PotatoPlugin.Log.LogInfo("✅ 成功添加画面镜像开关（游戏原生风格）");
+                }
+                else
+                {
+                    PotatoPlugin.Log.LogError("❌ 创建画面镜像开关失败");
+                }
 
-                // 小窗缩放比例下拉框
+                // 2. 小窗缩放比例下拉框（游戏原生风格）
                 CreateNativeDropdown(content, "小窗缩放比例",
                     new List<string> { "1/3 大小", "1/4 大小", "1/5 大小" },
-                    (int)PotatoPlugin.CfgWindowScale.Value - 3, // OneThird=3, OneFourth=4, OneFifth=5
-                    index => PotatoPlugin.CfgWindowScale.Value = (WindowScaleRatio)(index + 3));
+                    (int)PotatoPlugin.CfgWindowScale.Value - 3,
+                    index => {
+                        PotatoPlugin.CfgWindowScale.Value = (WindowScaleRatio)(index + 3);
+                        PotatoPlugin.Log.LogInfo($"小窗缩放比例: {PotatoPlugin.CfgWindowScale.Value}");
+                    });
 
-                // 拖动方式下拉框
+                // 3. 拖动方式下拉框（游戏原生风格）
                 CreateNativeDropdown(content, "小窗拖动方式",
                     new List<string> { "Ctrl + 左键", "Alt + 左键", "右键按住" },
                     (int)PotatoPlugin.CfgDragMode.Value,
-                    index => PotatoPlugin.CfgDragMode.Value = (DragMode)index);
+                    index => {
+                        PotatoPlugin.CfgDragMode.Value = (DragMode)index;
+                        PotatoPlugin.Log.LogInfo($"拖动方式: {PotatoPlugin.CfgDragMode.Value}");
+                    });
 
                 CreateSectionHeader(content, "快捷键设置");
                 
                 var keyOptions = GetFunctionKeyOptions();
                 
-                CreateNativeDropdown(content, "土豆模式",
+                CreateNativeDropdown(content, "土豆模式快捷键",
                     keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyPotatoMode.Value),
-                    index => PotatoPlugin.KeyPotatoMode.Value = GetKeyCodeFromIndex(index));
+                    index => {
+                        PotatoPlugin.KeyPotatoMode.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Log.LogInfo($"土豆模式快捷键: {PotatoPlugin.KeyPotatoMode.Value}");
+                    });
 
-                CreateNativeDropdown(content, "小窗模式",
+                CreateNativeDropdown(content, "小窗模式快捷键",
                     keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyPiPMode.Value),
-                    index => PotatoPlugin.KeyPiPMode.Value = GetKeyCodeFromIndex(index));
+                    index => {
+                        PotatoPlugin.KeyPiPMode.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Log.LogInfo($"小窗模式快捷键: {PotatoPlugin.KeyPiPMode.Value}");
+                    });
 
-                CreateNativeDropdown(content, "镜像翻转",
+                CreateNativeDropdown(content, "镜像快捷键",
                     keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyCameraMirror.Value),
-                    index => PotatoPlugin.KeyCameraMirror.Value = GetKeyCodeFromIndex(index));
+                    index => {
+                        PotatoPlugin.KeyCameraMirror.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Log.LogInfo($"镜像快捷键: {PotatoPlugin.KeyCameraMirror.Value}");
+                    });
 
                 LayoutRebuilder.ForceRebuildLayoutImmediate(content);
             });
@@ -939,7 +982,32 @@ namespace PotatoOptimization
                     return;
                 }
 
-                // 2. 获取按钮模板
+                // ✅ 2. 先设置父对象（在 SetActive(false) 状态下）
+                pulldownClone.transform.SetParent(parent, false); // ← worldPositionStays = false 很重要！
+                
+                // ✅ 3. 再次重置局部位置（防止父对象的布局影响）
+                var rectTransform = pulldownClone.GetComponent<RectTransform>();
+                rectTransform.anchoredPosition = Vector2.zero;
+                rectTransform.anchoredPosition3D = Vector3.zero;
+                rectTransform.localPosition = Vector3.zero;
+
+                // 4. 修改标题
+                Transform titleTransform = pulldownClone.transform.Find("TitleText");
+                if (titleTransform != null)
+                {
+                    TMP_Text titleText = titleTransform.GetComponent<TMP_Text>();
+                    if (titleText != null)
+                    {
+                        titleText.text = label;
+                        PotatoPlugin.Log.LogInfo($"✅ 设置下拉框标题: '{label}'");
+                    }
+                }
+                else
+                {
+                    PotatoPlugin.Log.LogWarning($"⚠️ 未找到 TitleText 组件");
+                }
+
+                // 5. 获取按钮模板
                 GameObject buttonTemplate = ModPulldownCloner.GetSelectButtonTemplate(cachedSettingUI.transform);
                 if (buttonTemplate == null)
                 {
@@ -948,15 +1016,7 @@ namespace PotatoOptimization
                     return;
                 }
 
-                // 3. 修改下拉框的标题（如果存在Title组件）
-                TMP_Text titleText = pulldownClone.transform.Find("Title")?.GetComponent<TMP_Text>();
-                if (titleText != null)
-                {
-                    titleText.text = label;
-                    PotatoPlugin.Log.LogInfo($"设置下拉框标题: {label}");
-                }
-
-                // 4. 添加选项
+                // 6. 添加选项
                 for (int i = 0; i < options.Count; i++)
                 {
                     int index = i;
@@ -970,19 +1030,29 @@ namespace PotatoOptimization
                     });
                 }
 
-                // 5. 设置父物体为content
-                pulldownClone.transform.SetParent(parent, false);
-                
-                // 6. 设置默认选中项（在激活前）
+                // 7. 设置默认选中项
                 if (currentIndex >= 0 && currentIndex < options.Count)
                 {
                     SetPulldownSelectedText(pulldownClone, options[currentIndex]);
                 }
-                
-                // 7. 激活下拉框
+
+                // ✅ 8. 添加 LayoutElement 组件（适配 VerticalLayoutGroup）
+                var layoutElement = pulldownClone.GetComponent<LayoutElement>();
+                if (layoutElement == null)
+                {
+                    layoutElement = pulldownClone.AddComponent<LayoutElement>();
+                }
+                layoutElement.preferredHeight = 72f; // 告诉 VerticalLayoutGroup 这个元素的首选高度
+                PotatoPlugin.Log.LogInfo($"✅ 添加 LayoutElement (preferredHeight = 72f)");
+
+                // ✅ 9. 最后激活（确保所有设置都完成后）
                 pulldownClone.SetActive(true);
 
-                // 8. 清理模板
+                // ✅ 10. 强制更新画布并重建布局
+                Canvas.ForceUpdateCanvases();
+                LayoutRebuilder.ForceRebuildLayoutImmediate(parent.GetComponent<RectTransform>());
+
+                // 11. 清理模板
                 Object.Destroy(buttonTemplate);
 
                 PotatoPlugin.Log.LogInfo($"成功创建原生风格下拉框: {label}");

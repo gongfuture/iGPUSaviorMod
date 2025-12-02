@@ -314,7 +314,8 @@ namespace PotatoOptimization
         }
 
         // ✅ 改进后的镜像实现：使用投影矩阵而非Transform缩放
-        private void ApplyCameraMirror()
+        // ✅ 改为 public，允许从 ModSettingsIntegration 调用
+        public void ApplyCameraMirror()
         {
             Camera[] allCameras = Camera.allCameras;
             
@@ -360,6 +361,13 @@ namespace PotatoOptimization
             {
                 PotatoPlugin.Log.LogWarning($">>> 摄像机镜像: OFF (已恢复 {mirroredCount} 个摄像机) <<<");
             }
+        }
+
+        // ✅ 新增：设置镜像状态（供UI调用）
+        public void SetMirrorState(bool enabled)
+        {
+            isCameraMirrored = enabled;
+            ApplyCameraMirror();
         }
 
         private IEnumerator SetPiPMode(bool enable)
