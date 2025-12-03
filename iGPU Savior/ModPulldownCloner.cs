@@ -150,8 +150,22 @@ namespace PotatoOptimization
                 Transform content = pulldownClone.transform.Find("PulldownList/Pulldown/CurrentSelectText (TMP)/Content");
                 if (content == null)
                 {
-                    PotatoPlugin.Log.LogError("Content container not found");
-                    return;
+                    // Check if we already moved content to Viewport (scrolling enabled)
+                    // If content was moved, the path above won't work, so we search recursively
+                    content = pulldownClone.transform.Find("PulldownList/Pulldown/CurrentSelectText (TMP)/ScrollView/Viewport/Content");
+                    
+                    // Fallback search
+                    if (content == null) {
+                         var allContent = pulldownClone.GetComponentsInChildren<RectTransform>(true);
+                         foreach(var rt in allContent) {
+                             if (rt.name == "Content") { content = rt; break; }
+                         }
+                    }
+                    
+                    if (content == null) {
+                        PotatoPlugin.Log.LogError("Content container not found");
+                        return;
+                    }
                 }
 
                 // Create new button from template
@@ -297,63 +311,129 @@ namespace PotatoOptimization
                     pulldownUIType.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(pulldownUI, value);
                 }
 
-                // 6. 计算高度和处理滚动 (ScrollRect)
-                float contentHeight = (manualContentHeight > 0) ? manualContentHeight : (contentRect != null ? contentRect.sizeDelta.y : 200f);
-                float openSize = pulldownParentRect.rect.height + contentHeight + 20f;
+                // =========================================================================
+                // 🔥 核心修复：高度计算与滚动条构建 🔥
+                // =========================================================================
+
+                // A. 精确计算所需高度 (不依赖 Unity 自动布局，避免时序问题)
+                int childCount = content.childCount;
+                float itemHeight = 40f; // 标准按钮高度
                 
-                if (contentHeight > 240f && contentRect != null)
+                // 尝试从第一个子物体获取真实高度 (如果有)
+                if (childCount > 0)
                 {
-                    var scrollRect = content.GetComponent<ScrollRect>();
-                    if (scrollRect == null)
+                    var firstChild = content.GetChild(0).GetComponent<RectTransform>();
+                    if (firstChild != null && firstChild.rect.height > 10) itemHeight = firstChild.rect.height;
+                }
+                
+                float realContentHeight = childCount * itemHeight;
+
+                // B. 滚动逻辑：如果高度超过阈值 (比如 6 个选项)，则限制高度并启用滚动
+                float maxVisibleItems = 6f; // 最多显示 6 个
+                float maxViewHeight = maxVisibleItems * itemHeight;
+                
+                bool needsScroll = realContentHeight > maxViewHeight;
+                float finalViewHeight = needsScroll ? maxViewHeight : realContentHeight;
+                
+                // C. 计算展开动画的目标高度 (OpenSize)
+                // 头部高度(通常40) + 显示内容高度 + 缓冲(10)
+                float headerHeight = pulldownParentRect.rect.height; 
+                float openSize = headerHeight + finalViewHeight + 10f;
+
+                // D. 动态构建 ScrollView 结构 (如果需要且尚未构建)
+                if (needsScroll)
+                {
+                    // 检查是否已经在 Viewport 里了
+                    if (content.parent.name != "Viewport")
                     {
-                        scrollRect = content.gameObject.AddComponent<ScrollRect>();
+                        // 1. 创建 ScrollView (作为容器)
+                        GameObject scrollView = new GameObject("ScrollView", typeof(RectTransform));
+                        scrollView.transform.SetParent(content.parent, false); // 挂在原父节点下 (CurrentSelectText)
+                        
+                        var scrollRectRT = scrollView.GetComponent<RectTransform>();
+                        scrollRectRT.anchorMin = Vector2.zero;
+                        scrollRectRT.anchorMax = new Vector2(1f, 0f); // 底部对齐
+                        scrollRectRT.pivot = new Vector2(0.5f, 1f);   // 顶部锚点
+                        scrollRectRT.sizeDelta = new Vector2(0, finalViewHeight); // 宽度自适应，高度受限
+                        scrollRectRT.anchoredPosition = Vector2.zero; // 贴紧头部下方
+
+                        // 2. 添加 ScrollRect 组件
+                        var scrollRect = scrollView.AddComponent<ScrollRect>();
                         scrollRect.horizontal = false;
                         scrollRect.vertical = true;
                         scrollRect.scrollSensitivity = 20f;
                         scrollRect.movementType = ScrollRect.MovementType.Clamped;
-                        
-                        var viewport = new GameObject("Viewport");
-                        viewport.transform.SetParent(content, false);
-                        var viewportRect = viewport.AddComponent<RectTransform>();
-                        viewportRect.anchorMin = Vector2.zero; viewportRect.anchorMax = Vector2.one; viewportRect.sizeDelta = Vector2.zero;
-                        viewport.AddComponent<RectMask2D>();
-                        
-                        scrollRect.viewport = viewportRect;
+
+                        // 3. 创建 Viewport (遮罩层)
+                        GameObject viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+                        viewport.transform.SetParent(scrollView.transform, false);
+                        var viewRect = viewport.GetComponent<RectTransform>();
+                        viewRect.anchorMin = Vector2.zero;
+                        viewRect.anchorMax = Vector2.one;
+                        viewRect.sizeDelta = Vector2.zero; // 填满 ScrollView
+
+                        // 4. 将 Content 移入 Viewport
+                        content.SetParent(viewport.transform, true);
+
+                        // 5. 绑定引用
+                        scrollRect.viewport = viewRect;
                         scrollRect.content = contentRect;
-                        
-                        contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, contentHeight);
+
+                        // 6. 修正 Content 参数
+                        // 在 ScrollRect 中，Content 高度必须是真实总高度
+                        contentRect.anchorMin = new Vector2(0, 1); // Top Left
+                        contentRect.anchorMax = new Vector2(1, 1); // Top Right
+                        contentRect.pivot = new Vector2(0.5f, 1f); 
+                        contentRect.anchoredPosition = Vector2.zero;
+                        contentRect.sizeDelta = new Vector2(0, realContentHeight);
+
+                        // 添加 ContentSizeFitter 确保 Content 自动根据按钮撑大
+                        var fitter = content.GetComponent<ContentSizeFitter>();
+                        if (fitter == null) fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+                        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+                        PotatoPlugin.Log.LogInfo($"[ModPulldown] Created ScrollView for {childCount} items.");
                     }
-                    openSize = pulldownParentRect.rect.height + 240f + 20f; 
+                    else
+                    {
+                        // 如果已经有结构，更新 Viewport 高度
+                        if (content.parent.parent != null) // ScrollView
+                        {
+                            var scrollViewRT = content.parent.parent.GetComponent<RectTransform>();
+                            if (scrollViewRT != null)
+                                scrollViewRT.sizeDelta = new Vector2(scrollViewRT.sizeDelta.x, finalViewHeight);
+                        }
+                    }
                 }
-
-                if (contentRect != null) {
-                    contentRect.anchorMin = Vector2.zero; 
-                    contentRect.anchorMax = new Vector2(1f, 0f);
-                    contentRect.pivot = new Vector2(0.5f, 1f); 
-                    contentRect.anchoredPosition = Vector2.zero;
+                else
+                {
+                    // 不需要滚动时，确保 Content 高度正确，防止留白
+                    if (contentRect != null)
+                    {
+                        contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, realContentHeight);
+                        contentRect.anchoredPosition = Vector2.zero;
+                    }
                 }
 
                 // =========================================================================
-                // 🔥 关键修复：把 Canvas 加在【clone 根节点】上 🔥
+                // 🔥 关键修复：把 Canvas 加在【clone 根节点】上 🔥 (之前已验证成功)
                 // =========================================================================
-                // 这样整个组件（包括标题栏和列表）都会在展开时提升层级，不会被下方按钮遮挡
                 
                 Canvas rootCanvas = clone.GetComponent<Canvas>();
                 if (rootCanvas == null)
                 {
                     rootCanvas = clone.AddComponent<Canvas>();
-                    // 默认关闭 overrideSorting，等展开时再开启，防止关闭状态下的层级异常
-                    rootCanvas.overrideSorting = false;
+                    // 默认关闭 overrideSorting，避免关闭状态下层级异常
+                    rootCanvas.overrideSorting = false; 
                     rootCanvas.sortingOrder = 0; 
                     
-                    // 必须加 Raycaster，否则有了 Canvas 后鼠标点击会失效
                     if (clone.GetComponent<GraphicRaycaster>() == null)
                         clone.AddComponent<GraphicRaycaster>();
                         
                     PotatoPlugin.Log.LogInfo("✅ Canvas added to ROOT object (ModPulldownList)");
                 }
                 
-                // 🧹 清理子物体上可能残留的 Canvas (防止打架)
+                // 🧹 清理子物体 Canvas
                 if (pulldown != null) {
                     var childCanvas = pulldown.GetComponent<Canvas>();
                     if (childCanvas != null) UnityEngine.Object.Destroy(childCanvas);
@@ -363,17 +443,16 @@ namespace PotatoOptimization
                     if (childCanvas != null) UnityEngine.Object.Destroy(childCanvas);
                 }
 
-                // 7. 初始化层级控制器 (传入根 Canvas)
+                // 7. 初始化层级控制器
                 var layerController = clone.GetComponent<PulldownLayerController>();
                 if (layerController == null) layerController = clone.AddComponent<PulldownLayerController>();
                 
-                // 只要这个 Initialize 被调用，Controller 就会接管 sortingOrder
                 layerController.Initialize(pulldownUI, rootCanvas);
 
                 // 8. 继续反射赋值
                 SetField("_currentSelectContentText", currentSelectTextComp);
                 SetField("_pullDownParentRect", pulldownParentRect);
-                SetField("_openPullDownSizeDeltaY", openSize);
+                SetField("_openPullDownSizeDeltaY", openSize); // 使用精确计算后的 openSize
                 SetField("_pullDownOpenCloseSeconds", 0.3f);
                 SetField("_pullDownOpenButton", pulldownButtonComp);
                 SetField("_pullDownButtonRect", pulldownButtonRect);
@@ -444,7 +523,7 @@ namespace PotatoOptimization
 
             // ========== 优化修复：开关 overrideSorting ==========
             // 展开时：开启 overrideSorting 并设置为 30000，确保盖住所有东西
-            // 收起时：关闭 overrideSorting，让它回归父级 Layout 的自然层级，避免关闭时出现遮挡异常
+            // 收起时：关闭 overrideSorting，让它回归父级 Layout 的自然层级
             
             if (isOpen)
             {
@@ -456,8 +535,6 @@ namespace PotatoOptimization
                 targetCanvas.overrideSorting = false;
                 targetCanvas.sortingOrder = 0;
             }
-            
-            // PotatoPlugin.Log.LogInfo($"Dropdown layer changed: isOpen={isOpen}, override={targetCanvas.overrideSorting}");
         }
     }
 }
