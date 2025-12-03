@@ -23,12 +23,49 @@ namespace PotatoOptimization
         {
             try
             {
-                // 1. 找到游戏原版的垂直同步开关作为模板
-                Transform verticalSyncRow = settingUITransform.Find("Graphics/ScrollView/Viewport/Content/VerticalSync");
+                // 1. 找到游戏原版的开关作为模板（根据日志，使用FrameRate或WindowMode）
+                Transform verticalSyncRow = settingUITransform.Find("Graphics/ScrollView/Viewport/Content/FrameRate");
                 
                 if (verticalSyncRow == null)
                 {
-                    PotatoPlugin.Log.LogError("未找到 VerticalSync 模板行");
+                    // 尝试其他可能的toggle模板路径
+                    string[] alternativePaths = new[]
+                    {
+                        "Graphics/ScrollView/Viewport/Content/WindowMode",
+                        "Graphics/ScrollView/Viewport/Content/ChangeAlwaysOnTop",
+                        "General/ScrollView/Viewport/Content/AutoSave"
+                    };
+                    
+                    foreach (var path in alternativePaths)
+                    {
+                        verticalSyncRow = settingUITransform.Find(path);
+                        if (verticalSyncRow != null)
+                        {
+                            PotatoPlugin.Log.LogInfo($"Using alternative toggle template: {path}");
+                            break;
+                        }
+                    }
+                }
+                
+                if (verticalSyncRow == null)
+                {
+                    PotatoPlugin.Log.LogError("未找到 VerticalSync 或任何替代模板行。尝试列出 Graphics Content 的子对象...");
+                    
+                    // 诊断：列出所有可用的子对象
+                    Transform graphicsContent = settingUITransform.Find("Graphics/ScrollView/Viewport/Content");
+                    if (graphicsContent != null)
+                    {
+                        PotatoPlugin.Log.LogInfo($"Graphics Content has {graphicsContent.childCount} children:");
+                        for (int i = 0; i < graphicsContent.childCount; i++)
+                        {
+                            PotatoPlugin.Log.LogInfo($"  [{i}] {graphicsContent.GetChild(i).name}");
+                        }
+                    }
+                    else
+                    {
+                        PotatoPlugin.Log.LogError("Graphics/ScrollView/Viewport/Content not found!");
+                    }
+                    
                     return null;
                 }
 
