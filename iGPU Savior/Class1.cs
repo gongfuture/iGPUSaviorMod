@@ -50,7 +50,9 @@ namespace PotatoOptimization
         public static ConfigEntry<KeyCode> KeyPotatoMode;
         public static ConfigEntry<KeyCode> KeyPiPMode;
         public static ConfigEntry<KeyCode> KeyCameraMirror; // 镜像摄像机快捷键
+        public static ConfigEntry<KeyCode> KeyPortraitMode; // 竖屏优化快捷键
         public static ConfigEntry<bool> CfgEnableMirror; // 启动时是否启用镜像
+        public static ConfigEntry<bool> CfgEnablePortraitMode; // 是否启用竖屏优化
         public static ConfigEntry<WindowScaleRatio> CfgWindowScale;
         public static ConfigEntry<DragMode> CfgDragMode;
         public static ConfigEntry<UIStyle> CfgUIStyle; // UI风格选择
@@ -89,7 +91,9 @@ namespace PotatoOptimization
             KeyPotatoMode = Config.Bind("Hotkeys", "PotatoModeKey", KeyCode.F2, "切换土豆模式的按键");
             KeyPiPMode = Config.Bind("Hotkeys", "PiPModeKey", KeyCode.F3, "切换画中画小窗的按键");
             KeyCameraMirror = Config.Bind("Hotkeys", "CameraMirrorKey", KeyCode.F4, "切换摄像机镜像的按键(左右翻转画面)");
+            KeyPortraitMode = Config.Bind("Hotkeys", "PortraitModeKey", KeyCode.F5, "切换竖屏优化的按键(方便调试参数)");
             CfgEnableMirror = Config.Bind("Camera", "EnableMirrorOnStart", false, "启动时是否自动启用摄像机镜像(默认关闭,建议先用UE Explorer测试)");
+            CfgEnablePortraitMode = Config.Bind("Camera", "EnablePortraitMode", true, "是否启用竖屏优化(检测到竖屏时自动调整相机参数)");
             CfgWindowScale = Config.Bind("Window", "ScaleRatio", WindowScaleRatio.OneThird, "小窗缩放比例");
             CfgDragMode = Config.Bind("Window", "DragMethod", DragMode.Ctrl_LeftClick, "拖动方式");
             CfgUIStyle = Config.Bind("UI", "Style", UIStyle.Modern, "MOD设置界面风格 (Modern=现代化Chrome风格, GameNative=游戏原生风格)");
@@ -113,6 +117,15 @@ namespace PotatoOptimization
         private int lastScreenWidth;
         private int lastScreenHeight;
         private AudioChannelSwapper audioSwapper; // 音频声道交换组件
+
+        // === 竖屏优化相关 ===
+        private bool isPortraitOptimizationEnabled = true; // 竖屏优化是否启用(可通过F5切换)
+        private bool isPortraitMode = false; // 当前是否为竖屏模式
+        private bool hasOriginalCameraParams = false; // 是否已保存原始相机参数
+        private Vector3 originalCameraPosition;
+        private Quaternion originalCameraRotation;
+        private float originalCameraFOV;
+        private float originalCameraOrthoSize;
 
         private float targetRenderScale = 0.4f;
         private int currentTargetWidth;
@@ -222,6 +235,9 @@ namespace PotatoOptimization
             lastScreenWidth = Screen.width;
             lastScreenHeight = Screen.height;
 
+            // 初始化竖屏优化状态
+            isPortraitOptimizationEnabled = PotatoPlugin.CfgEnablePortraitMode.Value;
+
             // 根据配置决定是否启动时启用镜像
             if (PotatoPlugin.CfgEnableMirror.Value)
             {
@@ -256,10 +272,31 @@ namespace PotatoOptimization
                 ToggleCameraMirror();
             }
 
+            if (Input.GetKeyDown(PotatoPlugin.KeyPortraitMode.Value))
+            {
+                TogglePortraitOptimization();
+            }
+
             // ✨ 检测分辨率变化（镜像模式下）
             if (isCameraMirrored)
             {
                 CheckAndHandleResolutionChange();
+            }
+
+            // ✨ 竖屏优化检测与调整（仅在启用时）
+            if (isPortraitOptimizationEnabled)
+            {
+                CheckAndHandlePortraitMode();
+            }
+            else if (isPortraitMode)
+            {
+                // 如果优化被禁用但之前处于竖屏模式，恢复原始参数
+                Camera mainCam = Camera.main;
+                if (mainCam != null)
+                {
+                    RestoreOriginalCameraParams(mainCam);
+                    isPortraitMode = false;
+                }
             }
 
             if (isSmallWindow)
@@ -581,11 +618,17 @@ namespace PotatoOptimization
                     return;
                 }
 
-                // 添加声道交换组件
+                // 检查是否已存在组件，避免重复添加
                 audioSwapper = listener.gameObject.GetComponent<AudioChannelSwapper>();
                 if (audioSwapper == null)
                 {
                     audioSwapper = listener.gameObject.AddComponent<AudioChannelSwapper>();
+                    PotatoPlugin.Log.LogInfo("已创建音频声道交换组件");
+                }
+                else if (audioSwapper.enabled)
+                {
+                    PotatoPlugin.Log.LogWarning("音频声道交换组件已启用，跳过重复添加");
+                    return;
                 }
 
                 audioSwapper.enabled = true;
@@ -601,8 +644,10 @@ namespace PotatoOptimization
         {
             if (audioSwapper != null)
             {
-                audioSwapper.enabled = false;
-                PotatoPlugin.Log.LogInfo("已禁用音频声道交换");
+                // 关键修复：销毁组件而非仅禁用，避免OnAudioFilterRead继续被调用导致爆音
+                Destroy(audioSwapper);
+                audioSwapper = null;
+                PotatoPlugin.Log.LogInfo("已销毁音频声道交换组件");
             }
         }
 
@@ -799,6 +844,159 @@ namespace PotatoOptimization
             // 取消场景加载回调
             SceneManager.sceneLoaded -= OnSceneLoaded;
         }
+
+        // ==========================================
+        // ✨ 竖屏优化功能
+        // ==========================================
+
+        /// <summary>
+        /// 切换竖屏优化开关（方便调试）
+        /// </summary>
+        private void TogglePortraitOptimization()
+        {
+            isPortraitOptimizationEnabled = !isPortraitOptimizationEnabled;
+            PotatoPlugin.CfgEnablePortraitMode.Value = isPortraitOptimizationEnabled;
+            
+            if (isPortraitOptimizationEnabled)
+            {
+                PotatoPlugin.Log.LogWarning($">>> 竖屏优化: 已启用 <<<");
+            }
+            else
+            {
+                PotatoPlugin.Log.LogWarning($">>> 竖屏优化: 已禁用 <<<");
+                // 立即恢复相机参数
+                if (isPortraitMode)
+                {
+                    Camera mainCam = Camera.main;
+                    if (mainCam != null)
+                    {
+                        RestoreOriginalCameraParams(mainCam);
+                        isPortraitMode = false;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 检测并处理竖屏模式
+        /// </summary>
+        private void CheckAndHandlePortraitMode()
+        {
+            Camera mainCam = Camera.main;
+            if (mainCam == null)
+                return;
+
+            // 判断当前是否为竖屏（高度 > 宽度）
+            bool currentIsPortrait = Screen.height > Screen.width;
+
+            // 状态变化时进行处理
+            if (currentIsPortrait != isPortraitMode)
+            {
+                isPortraitMode = currentIsPortrait;
+
+                if (isPortraitMode)
+                {
+                    // 进入竖屏模式
+                    PotatoPlugin.Log.LogInfo($"检测到竖屏模式: {Screen.width}x{Screen.height}");
+                    SaveOriginalCameraParams(mainCam);
+                    ApplyPortraitCameraAdjustment(mainCam);
+                }
+                else
+                {
+                    // 离开竖屏模式
+                    PotatoPlugin.Log.LogInfo($"恢复横屏模式: {Screen.width}x{Screen.height}");
+                    RestoreOriginalCameraParams(mainCam);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 保存原始相机参数
+        /// </summary>
+        private void SaveOriginalCameraParams(Camera cam)
+        {
+            if (!hasOriginalCameraParams)
+            {
+                originalCameraPosition = cam.transform.position;
+                originalCameraRotation = cam.transform.rotation;
+                originalCameraFOV = cam.fieldOfView;
+                originalCameraOrthoSize = cam.orthographicSize;
+                hasOriginalCameraParams = true;
+                PotatoPlugin.Log.LogInfo($"已保存原始相机参数: Pos={originalCameraPosition}, Rot={originalCameraRotation.eulerAngles}, FOV={originalCameraFOV}");
+            }
+        }
+
+        /// <summary>
+        /// 应用竖屏模式的相机调整（基于原始参数的相对插值算法）
+        /// </summary>
+        private void ApplyPortraitCameraAdjustment(Camera cam)
+        {
+            // 测试数据分析：
+            // 原版：Pos(1.876, 1.074, 2.687) Rot(4.3996, 129.5764, 0.0361) FOV=35
+            // 调优：Pos(1.976, 1.0085, 2.5852) Rot(3.6506, 124.3544, 359.8452) FOV=70
+            
+            // 计算相对变化率而非固定偏移
+            Vector3 originalPos = originalCameraPosition;
+            Vector3 originalRot = originalCameraRotation.eulerAngles;
+            float originalFov = originalCameraFOV;
+
+            // 1. 位置调整 - 基于原始值的相对偏移
+            Vector3 newPosition = cam.transform.position;
+            // X轴: +5.3% (1.976/1.876 ≈ 1.053)
+            newPosition.x = originalPos.x * 1.053f;
+            // Y轴: -6.1% (1.0085/1.074 ≈ 0.939)
+            newPosition.y = originalPos.y * 0.939f;
+            // Z轴: -3.8% (2.5852/2.687 ≈ 0.962)
+            newPosition.z = originalPos.z * 0.962f;
+            cam.transform.position = newPosition;
+
+            // 2. 旋转调整 - 基于原始欧拉角的相对变化
+            Vector3 newRotation = originalRot;
+            
+            // Pitch (X轴): -17% (3.6506/4.3996 ≈ 0.83)
+            newRotation.x = originalRot.x * 0.83f;
+            
+            // Yaw (Y轴): -4% (124.3544/129.5764 ≈ 0.96)
+            newRotation.y = originalRot.y * 0.96f;
+            
+            // Roll (Z轴): 处理角度归一化问题
+            // 原版0.0361 → 调优359.8452，实际是 -0.1548 度（360-359.8452）
+            // 微小差异，保持不变
+            newRotation.z = originalRot.z;
+            
+            cam.transform.rotation = Quaternion.Euler(newRotation);
+
+            // 3. FOV调整 - 基于原始FOV的倍率
+            if (cam.orthographic)
+            {
+                // 正交相机：按相同比例调整
+                cam.orthographicSize = originalCameraOrthoSize * 2.0f;
+            }
+            else
+            {
+                // 透视相机: FOV翻倍 (70/35 = 2.0)
+                cam.fieldOfView = originalFov * 2.0f;
+            }
+
+            PotatoPlugin.Log.LogInfo($"[竖屏优化] 已应用相对调整:\n" +
+                $"  原始 Pos={originalPos:F4} Rot={originalRot:F4} FOV={originalFov:F2}\n" +
+                $"  调整 Pos={cam.transform.position:F4} Rot={cam.transform.rotation.eulerAngles:F4} FOV={cam.fieldOfView:F2}");
+        }
+
+        /// <summary>
+        /// 恢复原始相机参数
+        /// </summary>
+        private void RestoreOriginalCameraParams(Camera cam)
+        {
+            if (hasOriginalCameraParams)
+            {
+                cam.transform.position = originalCameraPosition;
+                cam.transform.rotation = originalCameraRotation;
+                cam.fieldOfView = originalCameraFOV;
+                cam.orthographicSize = originalCameraOrthoSize;
+                PotatoPlugin.Log.LogInfo($"已恢复原始相机参数: Pos={originalCameraPosition}, Rot={originalCameraRotation.eulerAngles}, FOV={originalCameraFOV}");
+            }
+        }
     }
 
     // ==========================================
@@ -871,9 +1069,20 @@ namespace PotatoOptimization
     {
         void OnAudioFilterRead(float[] data, int channels)
         {
+            // 防御性检查：确保数据有效
+            if (data == null || data.Length == 0)
+                return;
+
             // 仅处理立体声 (2 声道)
             if (channels != 2)
                 return;
+
+            // 验证数据长度是否匹配声道数
+            if (data.Length % 2 != 0)
+            {
+                PotatoPlugin.Log.LogWarning($"音频数据长度异常: {data.Length} (应为偶数)");
+                return;
+            }
 
             // 交换左右声道
             // data 格式: [L0, R0, L1, R1, L2, R2, ...]
