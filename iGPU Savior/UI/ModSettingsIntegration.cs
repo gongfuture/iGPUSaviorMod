@@ -394,6 +394,17 @@ namespace PotatoOptimization.UI
                 var titleText = modContentParent.GetComponent<TextMeshProUGUI>();
                 if (titleText != null) titleText.text = "MOD Settings";
 
+                // ✅ 关键修复：找到 Title 子物体并修改其文本
+                Transform titleTransform = modContentParent.transform.Find("Title");
+                if (titleTransform != null)
+                {
+                    var titleTextComponent = titleTransform.GetComponent<TextMeshProUGUI>();
+                    if (titleTextComponent != null)
+                    {
+                        titleTextComponent.text = "MOD";
+                    }
+                }
+
                 var allTexts = modContentParent.GetComponentsInChildren<TextMeshProUGUI>(true);
                 foreach (var text in allTexts)
                 {
