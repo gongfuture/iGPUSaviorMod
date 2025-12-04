@@ -8,28 +8,10 @@ using System.Collections.Generic;
 using System.Linq;
 using ModShared;
 using BepInEx.Configuration;
+using PotatoOptimization.Core;
 
-namespace PotatoOptimization
+namespace PotatoOptimization.UI
 {
-    public static class ModernUIStyle
-    {
-        public static class Colors
-        {
-            public static readonly Color Background = new Color(0.11f, 0.11f, 0.13f, 1f);
-            public static readonly Color Surface = new Color(0.15f, 0.15f, 0.17f, 1f);
-            public static readonly Color SurfaceHover = new Color(0.18f, 0.18f, 0.20f, 1f);
-            public static readonly Color Primary = new Color(0.26f, 0.52f, 0.96f, 1f);
-            public static readonly Color TextPrimary = new Color(0.95f, 0.95f, 0.95f, 1f);
-            public static readonly Color TextSecondary = new Color(0.70f, 0.70f, 0.72f, 1f);
-        }
-
-        public static class Sizes
-        {
-            public const float RowHeight = 72f;
-            public const float HeaderHeight = 48f;
-            public const float Spacing = 16f;
-        }
-    }
 
     [HarmonyPatch(typeof(SettingUI), "Setup")]
     public class ModSettingsIntegration
@@ -139,7 +121,7 @@ namespace PotatoOptimization
         static void ConfigureContentLayout(GameObject content)
         {
             var vGroup = content.GetComponent<VerticalLayoutGroup>() ?? content.AddComponent<VerticalLayoutGroup>();
-            vGroup.spacing = ModernUIStyle.Sizes.Spacing;
+            vGroup.spacing = 16f;
             vGroup.padding = new RectOffset(32, 32, 24, 24);
             vGroup.childControlHeight = false;
             vGroup.childControlWidth = true;
@@ -216,10 +198,10 @@ namespace PotatoOptimization
                 GameObject mirrorToggle = ModToggleCloner.CreateToggle(
                     cachedSettingUI.transform,
                     "Enable Mirror", // 标题
-                    PotatoPlugin.CfgEnableMirror.Value, // 初始值
+                    PotatoPlugin.Config.CfgEnableMirror.Value, // 初始值
                     val =>
                     {
-                        PotatoPlugin.CfgEnableMirror.Value = val;
+                        PotatoPlugin.Config.CfgEnableMirror.Value = val;
                         // 实时应用设置
                         var controller = Object.FindObjectOfType<PotatoController>();
                         controller?.SetMirrorState(val);
@@ -236,42 +218,42 @@ namespace PotatoOptimization
 
                 CreateNativeDropdown(content, "Window Scale",
                     new List<string> { "1/3 Size", "1/4 Size", "1/5 Size" },
-                    (int)PotatoPlugin.CfgWindowScale.Value - 3,
+                    (int)PotatoPlugin.Config.CfgWindowScale.Value - 3,
                     index =>
                     {
-                        PotatoPlugin.CfgWindowScale.Value = (WindowScaleRatio)(index + 3);
+                        PotatoPlugin.Config.CfgWindowScale.Value = (WindowScaleRatio)(index + 3);
                     });
 
                 CreateNativeDropdown(content, "Window Drag Mode",
                     new List<string> { "Ctrl + Left Click", "Alt + Left Click", "Right Click Hold" },
-                    (int)PotatoPlugin.CfgDragMode.Value,
+                    (int)PotatoPlugin.Config.CfgDragMode.Value,
                     index =>
                     {
-                        PotatoPlugin.CfgDragMode.Value = (DragMode)index;
+                        PotatoPlugin.Config.CfgDragMode.Value = (DragMode)index;
                     });
 
                 // CreateSectionHeader(content, "Hotkeys"); // Removed - causes text clipping outside viewport
                 var keyOptions = GetFunctionKeyOptions();
 
                 CreateNativeDropdown(content, "Potato Mode Hotkey",
-                    keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyPotatoMode.Value),
+                    keyOptions, GetKeyCodeIndex(PotatoPlugin.Config.KeyPotatoMode.Value),
                     index =>
                     {
-                        PotatoPlugin.KeyPotatoMode.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Config.KeyPotatoMode.Value = GetKeyCodeFromIndex(index);
                     });
 
                 CreateNativeDropdown(content, "PiP Mode Hotkey",
-                    keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyPiPMode.Value),
+                    keyOptions, GetKeyCodeIndex(PotatoPlugin.Config.KeyPiPMode.Value),
                     index =>
                     {
-                        PotatoPlugin.KeyPiPMode.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Config.KeyPiPMode.Value = GetKeyCodeFromIndex(index);
                     });
 
                 CreateNativeDropdown(content, "Camera Mirror Hotkey",
-                    keyOptions, GetKeyCodeIndex(PotatoPlugin.KeyCameraMirror.Value),
+                    keyOptions, GetKeyCodeIndex(PotatoPlugin.Config.KeyCameraMirror.Value),
                     index =>
                     {
-                        PotatoPlugin.KeyCameraMirror.Value = GetKeyCodeFromIndex(index);
+                        PotatoPlugin.Config.KeyCameraMirror.Value = GetKeyCodeFromIndex(index);
                     });
 
                 var contentRect = content as RectTransform ?? content.GetComponent<RectTransform>();
@@ -612,15 +594,15 @@ namespace PotatoOptimization
             obj.transform.SetParent(parent, false);
 
             var le = obj.AddComponent<LayoutElement>();
-            le.minHeight = ModernUIStyle.Sizes.HeaderHeight;
-            le.preferredHeight = ModernUIStyle.Sizes.HeaderHeight;
+            le.minHeight = 48f;
+            le.preferredHeight = 48f;
 
             var tmp = obj.AddComponent<TextMeshProUGUI>();
             if (_cachedFont != null) tmp.font = _cachedFont;
             tmp.text = text;
             tmp.fontSize = 22;
             tmp.fontStyle = FontStyles.Bold;
-            tmp.color = ModernUIStyle.Colors.Primary;
+            tmp.color = new Color(0.26f, 0.52f, 0.96f, 1f);
             tmp.alignment = TextAlignmentOptions.BottomLeft;
             tmp.margin = new Vector4(0, 0, 0, 8);
         }

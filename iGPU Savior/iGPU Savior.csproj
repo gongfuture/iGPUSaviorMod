@@ -89,12 +89,38 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Class1.cs" />
-    <Compile Include="ModPulldownCloner.cs" />
-    <Compile Include="ModSettingsManager.cs" />
-    <Compile Include="ModSettingsIntegration.cs" />
+    <!-- Core -->
+    <Compile Include="Core\Enums.cs" />
+    <Compile Include="Core\Constants.cs" />
+    <Compile Include="Core\PotatoPlugin.cs" />
+    <Compile Include="Core\PotatoController.cs" />
+    
+    <!-- Configuration -->
+    <Compile Include="Configuration\ConfigurationManager.cs" />
+    
+    <!-- Features -->
+    <Compile Include="Features\RenderQualityManager.cs" />
+    <Compile Include="Features\AudioManager.cs" />
+    <Compile Include="Features\CameraMirrorManager.cs" />
+    <Compile Include="Features\PortraitModeManager.cs" />
+    <Compile Include="Features\WindowStateManager.cs" />
+    
+    <!-- Utilities -->
+    <Compile Include="Utilities\WindowManager.cs" />
+    <Compile Include="Utilities\TypeHelper.cs" />
+    
+    <!-- Patches -->
+    <Compile Include="Patches\InputPatches.cs" />
+    
+    <!-- UI -->
+    <Compile Include="UI\ModPulldownCloner.cs" />
+    <Compile Include="UI\ModSettingsManager.cs" />
+    <Compile Include="UI\ModSettingsIntegration.cs" />
+    <Compile Include="UI\ModToggleCloner.cs" />
+    
+    
+    <!-- Properties -->
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="ModToggleCloner.cs" />
   </ItemGroup>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

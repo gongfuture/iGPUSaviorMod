@@ -3,20 +3,20 @@ using UnityEngine.UI;
 using TMPro;
 using System;
 using System.Reflection;
+using PotatoOptimization.Core;
+using PotatoOptimization.Utilities;
 
-namespace PotatoOptimization
+namespace PotatoOptimization.UI
 {
     /// <summary>
     /// Clone game's native dropdown component and customize it for MOD settings
     /// </summary>
     public class ModPulldownCloner
     {
-        // === 核心修复 1：通用类型获取方法 (防止 Type cannot be null) ===
+        // 使用 TypeHelper 获取类型
         private static Type GetPulldownUIType()
         {
-            return Type.GetType("Bulbul.PulldownListUI, Assembly-CSharp")
-                ?? Type.GetType("PulldownListUI, Assembly-CSharp")
-                ?? Type.GetType("PulldownListUI");
+            return TypeHelper.GetPulldownUIType();
         }
 
         /// <summary>

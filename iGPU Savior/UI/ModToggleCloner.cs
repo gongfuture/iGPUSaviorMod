@@ -3,8 +3,9 @@ using UnityEngine.UI;
 using TMPro;
 using System;
 using System.Linq;
+using PotatoOptimization.Core;
 
-namespace PotatoOptimization
+namespace PotatoOptimization.UI
 {
     public class ModToggleCloner
     {

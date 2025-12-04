@@ -5,7 +5,7 @@
 [![.NET Framework 4.7.2](https://img.shields.io/badge/.NET%20Framework-4.7.2-blue.svg)](https://dotnet.microsoft.com/download/dotnet-framework/net472)
 [![BepInEx](https://img.shields.io/badge/BepInEx-Plugin-green.svg)](https://github.com/BepInEx/BepInEx)
 
-一个用于游戏 《*放松时光：与你共享Lo-Fi故事*》 的性能优化和小窗 BepInEx 插件，不可以让你的土豆电脑的风扇不转，我试过了。但是可以给你提供一个不错的无边框小窗模式。
+一个用于游戏 《*放松时光：与你共享Lo-Fi故事*》 的性能和体验优化 BepInEx 插件，不可以让你的土豆电脑的风扇不转，我试过了。但是可以给你提供一个不错的镜像、小窗、竖屏模式。
 
 ---
 
