@@ -906,4 +906,62 @@ namespace PotatoOptimization.UI
             action?.Invoke();
         }
     }
+
+    /// <summary>
+    /// ✅ 关键修复：重新激活设置界面时，恢复"常规"标签和其内容面板
+    /// 这很重要，因为如果用户在"常规"标签时直接点击MOD标签，
+    /// SwitchToModTab会关闭所有原生标签的InteractableUI状态和内容面板
+    /// </summary>
+    [HarmonyPatch(typeof(SettingUI), "Activate")]
+    public class ModSettingsActivateHandler
+    {
+        static void Postfix(SettingUI __instance)
+        {
+            try
+            {
+                // 通过反射获取静态字段和UI引用
+                var modContentParent = AccessTools.Field(typeof(ModSettingsIntegration), "modContentParent").GetValue(null) as GameObject;
+                var modInteractableUI = AccessTools.Field(typeof(ModSettingsIntegration), "modInteractableUI").GetValue(null) as InteractableUI;
+
+                // 关闭MOD内容面板
+                if (modContentParent != null && modContentParent.activeSelf)
+                {
+                    modContentParent.SetActive(false);
+                }
+                
+                // 关闭MOD按钮的激活状态
+                if (modInteractableUI != null)
+                {
+                    modInteractableUI.DeactivateUseUI(false);
+                }
+
+                // ✅ 关键：恢复"常规"标签的激活状态和内容面板
+                var generalButton = AccessTools.Field(typeof(SettingUI), "_generalInteractableUI").GetValue(__instance) as InteractableUI;
+                var generalParent = AccessTools.Field(typeof(SettingUI), "_generalParent").GetValue(__instance) as GameObject;
+                
+                if (generalButton != null)
+                {
+                    generalButton.ActivateUseUI(false);
+                }
+                
+                if (generalParent != null && !generalParent.activeSelf)
+                {
+                    generalParent.SetActive(true);
+                }
+
+                // 关闭其他标签的内容面板
+                var graphicParent = AccessTools.Field(typeof(SettingUI), "_graphicParent").GetValue(__instance) as GameObject;
+                var audioParent = AccessTools.Field(typeof(SettingUI), "_audioParent").GetValue(__instance) as GameObject;
+                var creditsParent = AccessTools.Field(typeof(SettingUI), "_creditsParent").GetValue(__instance) as GameObject;
+
+                if (graphicParent != null && graphicParent.activeSelf)
+                    graphicParent.SetActive(false);
+                if (audioParent != null && audioParent.activeSelf)
+                    audioParent.SetActive(false);
+                if (creditsParent != null && creditsParent.activeSelf)
+                    creditsParent.SetActive(false);
+            }
+            catch { }
+        }
+    }
 }
