@@ -189,7 +189,32 @@ namespace PotatoOptimization.UI
                     CopyLayoutFromGraphics(graphicsContent, content);
                 }
 
-                foreach (Transform child in content) Object.Destroy(child.gameObject);
+                // ✅ 检查是否已经有外部 MOD 的设置（通过查找特定的 Row_ 前缀）
+                // 如果有，就不清空；如果没有，说明是第一次加载 iGPU Savior 的设置
+                bool hasExternalModSettings = false;
+                foreach (Transform child in content)
+                {
+                    if (child.name.StartsWith("Row_"))
+                    {
+                        hasExternalModSettings = true;
+                        break;
+                    }
+                }
+
+                // 只清空不是外部 MOD 的设置（即 iGPU Savior 的下拉菜单）
+                if (!hasExternalModSettings)
+                {
+                    // 第一次加载，清空所有内容
+                    foreach (Transform child in content)
+                        Object.Destroy(child.gameObject);
+                    PotatoPlugin.Log.LogInfo("First load: cleared all content");
+                }
+                else
+                {
+                    // 不是第一次加载，不要清空外部 MOD 的设置
+                    PotatoPlugin.Log.LogInfo("External MOD settings detected, preserving them");
+                }
+
                 PrepareUIResources();
 
                 // CreateSectionHeader(content, "Basic Settings"); // Removed - causes text clipping outside viewport
@@ -216,6 +241,7 @@ namespace PotatoOptimization.UI
                 }
                 // ===================================================
 
+                // ✅ 直接添加到 content 容器，不再使用 iGPUSaviorSection
                 CreateNativeDropdown(content, "Window Scale",
                     new List<string> { "1/3 Size", "1/4 Size", "1/5 Size" },
                     (int)PotatoPlugin.Config.CfgWindowScale.Value - 3,
@@ -258,6 +284,8 @@ namespace PotatoOptimization.UI
 
                 var contentRect = content as RectTransform ?? content.GetComponent<RectTransform>();
                 if (contentRect != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+                
+                PotatoPlugin.Log.LogInfo("✅ iGPU Savior 设置已注册，外部 MOD 设置得以保留");
             });
         }
 
