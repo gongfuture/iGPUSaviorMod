@@ -127,6 +127,19 @@ namespace PotatoOptimization.Core
             {
                 _renderManager.UpdatePotatoMode();
             }
+
+            // 延迟15秒后自动镜像（如果开启自动镜像）
+            if (_config != null && _config.CfgEnableMirror.Value)
+            {
+                StartCoroutine(DelayedMirror());
+            }
+        }
+
+        private IEnumerator DelayedMirror()
+        {
+            yield return new WaitForSeconds(15f);
+            _mirrorManager?.SetMirrorState(true);
+            PotatoPlugin.Log.LogWarning($">>> 场景切换后已自动启用摄像机镜像 <<<");
         }
 
         /// <summary>
