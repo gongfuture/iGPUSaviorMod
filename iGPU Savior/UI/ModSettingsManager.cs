@@ -288,17 +288,9 @@ private void AdjustScrollViewPosition()
 // === 核心方法：强制修正布局（解决文字挤压及飞出屏幕问题） ===
 private void EnforceLayout(GameObject obj)
 {
-    // [DEBUG] 1. 打印修正前的状态 (按交接文档要求)
-    var rt = obj.GetComponent<RectTransform>();
-    if (rt != null)
-    {
-        PotatoOptimization.Core.PotatoPlugin.Log.LogInfo($"[CLONE DEBUG PRE-FIX] {obj.name}: " +
-            $"Pos={rt.anchoredPosition}, Size={rt.sizeDelta}, " +
-            $"AnchorMin={rt.anchorMin}, AnchorMax={rt.anchorMax}, Pivot={rt.pivot}");
-    }
-
-    // 2. 【关键修复】强制重置 RectTransform 以适应 VerticalLayoutGroup
+    // 1. 【关键修复】强制重置 RectTransform 以适应 VerticalLayoutGroup
     // 原版控件可能使用了 (0.5, 0.5) 居中或 (1, 1) 右上角锚点，这会导致在 LayoutGroup 中计算出错误的偏移
+    var rt = obj.GetComponent<RectTransform>();
     if (rt != null)
     {
         // 强制设为左上角对齐，这是 VerticalLayoutGroup 最喜欢的格式
@@ -311,9 +303,6 @@ private void EnforceLayout(GameObject obj)
         obj.transform.localPosition = Vector3.zero; // 双重保险
         obj.transform.localScale = Vector3.one;
         obj.transform.localRotation = Quaternion.identity;
-        
-        // [DEBUG] 打印修正后状态
-        PotatoOptimization.Core.PotatoPlugin.Log.LogInfo($"[CLONE DEBUG POST-FIX] {obj.name}: Anchor reset to Top-Left.");
     }
 
     // 3. 寻找 Label 并强制设置宽度 (原有逻辑保留)
@@ -337,7 +326,6 @@ private void EnforceLayout(GameObject obj)
 
             t.alignment = TextAlignmentOptions.MidlineLeft;
             
-            PotatoOptimization.Core.PotatoPlugin.Log.LogInfo($"[UI Layout] Forced label width for: {t.name}");
             break;
         }
     }
