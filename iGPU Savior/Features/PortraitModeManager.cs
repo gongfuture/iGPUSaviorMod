@@ -29,20 +29,7 @@ namespace PotatoOptimization.Features
             // This prevents saving already-adjusted values if game starts in portrait mode
             if (_isEnabled)
             {
-                Camera mainCam = Camera.main;
-                if (mainCam != null)
-                {
-                    // Only save if we're in landscape mode initially
-                    if (Screen.width >= Screen.height)
-                    {
-                        SaveOriginalParams(mainCam);
-                        PotatoPlugin.Log.LogInfo("初始化时保存原始相机参数（横屏状态）");
-                    }
-                    else
-                    {
-                        PotatoPlugin.Log.LogWarning("检测到游戏在竖屏状态下启动，将在首次切换到横屏时保存原始参数");
-                    }
-                }
+                TrySaveOriginalParamsInLandscape();
             }
         }
 
@@ -67,12 +54,7 @@ namespace PotatoOptimization.Features
             // 如果启用且之前没有保存原始参数，尝试保存（仅在横屏时）
             else if (_isEnabled && !_hasOriginalParams)
             {
-                Camera mainCam = Camera.main;
-                if (mainCam != null && Screen.width >= Screen.height)
-                {
-                    SaveOriginalParams(mainCam);
-                    PotatoPlugin.Log.LogInfo("启用竖屏优化时保存原始相机参数");
-                }
+                TrySaveOriginalParamsInLandscape();
             }
         }
 
@@ -155,7 +137,7 @@ namespace PotatoOptimization.Features
                 
                 // 检测异常的相机位置值（可能的多显示器问题）
                 float posMagnitude = _originalPosition.magnitude;
-                if (posMagnitude > 1000f)
+                if (posMagnitude > Constants.AbnormalCameraPositionThreshold)
                 {
                     PotatoPlugin.Log.LogWarning($"[竖屏优化] 警告: 保存的原始相机位置异常大 (magnitude={posMagnitude:F2})");
                     PotatoPlugin.Log.LogWarning($"[竖屏优化] 这可能是多显示器环境导致的，建议在横屏模式下重新保存参数");
@@ -179,7 +161,7 @@ namespace PotatoOptimization.Features
             
             // 安全检查：如果计算出的位置异常大（可能是多显示器问题），记录警告
             float positionMagnitude = newPosition.magnitude;
-            if (positionMagnitude > 1000f)
+            if (positionMagnitude > Constants.AbnormalCameraPositionThreshold)
             {
                 PotatoPlugin.Log.LogWarning($"[竖屏优化] 警告: 计算出的相机位置异常大 (magnitude={positionMagnitude:F2})，可能是多显示器环境导致");
                 PotatoPlugin.Log.LogWarning($"[竖屏优化] 原始位置: {originalPos}, 计算位置: {newPosition}");
@@ -207,6 +189,24 @@ namespace PotatoOptimization.Features
             PotatoPlugin.Log.LogInfo($"[竖屏优化] 已应用相对调整:\n" +
                 $"  原始 Pos={originalPos:F4} Rot={originalRot:F4} FOV={originalFov:F2}\n" +
                 $"  调整 Pos={cam.transform.position:F4} Rot={cam.transform.rotation.eulerAngles:F4} FOV={cam.fieldOfView:F2}");
+        }
+
+        private void TrySaveOriginalParamsInLandscape()
+        {
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                // Only save if we're in landscape mode
+                if (Screen.width >= Screen.height)
+                {
+                    SaveOriginalParams(mainCam);
+                    PotatoPlugin.Log.LogInfo("横屏状态下保存原始相机参数");
+                }
+                else
+                {
+                    PotatoPlugin.Log.LogWarning("检测到竖屏状态，将在首次切换到横屏时保存原始参数");
+                }
+            }
         }
 
         private void RestoreOriginalParams(Camera cam)
