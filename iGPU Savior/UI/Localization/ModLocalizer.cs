@@ -29,13 +29,10 @@ namespace PotatoOptimization.UI
     private TMP_Text _textComp;
     private IDisposable _subscription;
 
-    private static GameLanguageType _cachedLang = GameLanguageType.English; // Default fallback
-    private static FontSupplier _cachedFontSupplier;
-    private static LanguageSupplier _cachedLanguageSupplier;
-
-    // Use a simplified approach: just re-resolve or cache statically?
-    // Since we're in a Monobehaviour, keeping instance ref is fine, but resolving in Start is standard.
-    // However, for runtime updates (Refresh) we need access to Lang/Font.
+    private void OnEnable()
+    {
+      if (_textComp != null && !string.IsNullOrEmpty(_key)) Refresh();
+    }
 
     private GameLanguageType _currentLang = GameLanguageType.English;
     private FontSupplier _fontSupplier;
